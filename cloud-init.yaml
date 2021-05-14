@@ -1,0 +1,128 @@
+#cloud-config
+chpasswd:
+    list: |
+      centos:VMware1!
+    expire: false
+groups:
+  - docker
+users:
+  - default
+  - name: centos
+    ssh-authorized-keys:
+      - ssh-rsa AAAAB3NzaC1yc...cN9kHW55HSO/L/Llz/PZyuk0wTbfqzc8BRA3Z0YiLo+I/LIc0= nverma@bastion0
+    sudo: ALL=(ALL) NOPASSWD:ALL
+    groups: sudo, docker
+    shell: /bin/bash
+network:
+  version: 2
+  ethernets:
+      ens192:
+          dhcp4: true
+package_update: true
+yum_repos:
+  docker-ce-stable:
+    name: Docker CE Stable - $basearch
+    baseurl: https://download.docker.com/linux/centos/$releasever/$basearch/stable
+    enabled: true
+    gpgcheck: true
+    gpgkey: https://download.docker.com/linux/centos/gpg
+mounts:
+  - [ /dev/sdb1, /data, "xfs", "defaults", "0", "2" ]
+packages:
+  - docker-ce
+  - docker-ce-cli
+  - containerd.io
+  - net-tools
+  - wget
+write_files:
+  - path: /harbor/tls.pem
+    content: |
+      -----BEGIN CERTIFICATE-----
+      MIIFNTCCBB2gAwIBAgISBOwj5VrGioysULxzVBUiVUFLMA0GCSqGSIb3DQEBCwUA
+      BV2aIqlBtxAs9shAAvihMs+pPv03SzLXKO+wa0fzA0MZDjvBype81oNNcjsTLH+I
+      ...
+      gxRRH6GyMLkYviQE3LbzDhgooQ1BY1Ru/dCuzICZ7ekDAy2OUMR33wKQXLI7k+wz
+      5xgzwn/AD8GYhTuWfwPZFR8gzoHI0gWYGt+5Ck8KoOvc4oioM2RR/tM=
+      -----END CERTIFICATE-----
+    owner: 'root:root'
+    permissions: '0444'
+  - path: /harbor/tls.key
+    content: |
+      -----BEGIN PRIVATE KEY-----
+      MIIEwAIBADANBgkqhkiG9w0BAQEFAASCBKowggSmAgEAAoIBAQDgzn3P265EV9P5
+      ...
+      i/CMHuI6mqss/RX9r8Ehmiv/UGpJY0qKSq2y5cUbd6NJ+uVmGylZgZSMYaJy81uS
+      oOMuhPX5NU58bC7pulF+VTBxfw0=
+      -----END PRIVATE KEY-----
+    owner: 'root:root'
+    permissions: '0444'
+  - path: /harbor/install-harbor.sh
+    content: |
+      #!/bin/bash
+      cd /harbor
+      /harbor/install.sh --with-trivy --with-notary
+      if [ $? -ne 0 ]
+      then
+        echo "Failed. Trying again"
+        /harbor/install.sh --with-trivy --with-notary
+      fi
+    owner: 'root:root'
+    permissions: '0755'
+  - path: /harbor/harbor.yml
+    content: |
+      hostname: harbor-centos.navlab.io
+      #http:
+      #  port: 80
+      https:
+        port: 443
+        certificate: /harbor/tls.pem
+        private_key: /harbor/tls.key
+      # external_url: https://reg.mydomain.com:8433
+      harbor_admin_password: VMware1!
+      database:
+        password: root123
+        max_idle_conns: 50
+        max_open_conns: 1000
+      data_volume: /data
+      trivy:
+        ignore_unfixed: false
+        skip_update: false
+        insecure: false
+      jobservice:
+        max_job_workers: 10
+      notification:
+        webhook_job_max_retry: 10
+      chart:
+        absolute_url: disabled
+      log:
+        level: info
+        local:
+          rotate_count: 50
+          rotate_size: 200M
+          location: /var/log/harbor
+      _version: 2.2.0
+      proxy:
+        http_proxy:
+        https_proxy:
+        no_proxy:
+        components:
+          - core
+          - jobservice
+          - trivy
+    owner: root:root
+    permissions: '0644'
+runcmd:
+  - parted /dev/sdb mklabel gpt
+  - parted /dev/sdb mkpart primary xfs 1MB 10240MB
+  - /sbin/mkfs.xfs /dev/sdb1
+  - mkdir -p /data
+  - mount -t xfs --rw /dev/sdb1 /data
+  - curl -L "https://github.com/docker/compose/releases/download/1.29.1/docker-compose-$(uname -s)-$(uname -m)" -o /usr/local/bin/docker-compose
+  - chmod +x /usr/local/bin/docker-compose
+  - ln -s /usr/local/bin/docker-compose /usr/bin/docker-compose
+  - systemctl enable docker
+  - systemctl start docker
+  - wget -q https://github.com/goharbor/harbor/releases/download/v2.2.1/harbor-offline-installer-v2.2.1.tgz
+  - tar --skip-old-files -xzvf harbor-offline-installer-v2.2.1.tgz
+  - rm -f harbor-offline-installer-v2.2.1.tgz
+  - /harbor/install-harbor.sh
