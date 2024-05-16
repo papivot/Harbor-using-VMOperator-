@@ -1,58 +1,97 @@
 #cloud-config
-chpasswd:
-    list: |
-      centos:VMware1!
-    expire: false
+
+package_update: true
+package_upgrade: true
+
+ssh:
+  emit_keys_to_console: false
+
+no_ssh_fingerprints: true
+
 groups:
   - docker
+
+system_info:
+  default_user:
+    groups: [docker]
+
+ssh_pwauth: true
 users:
-  - default
-  - name: centos
-    ssh-authorized-keys:
-      - ssh-rsa AAAAB3NzaC1yc...cN9kHW55HSO/L/Llz/PZyuk0wTbfqzc8BRA3Z0YiLo+I/LIc0= nverma@bastion0
+  - name: vmware-system-user
     sudo: ALL=(ALL) NOPASSWD:ALL
-    groups: sudo, docker
+    lock_passwd: false
+    # Password set to Admin!23
+    passwd: '$6$8jLYuI5uLgpuEVFc$uFlPBmFOVodfWb59VJHISwJncbCWjyeWdIPaHLHfTZiQokYHfxOBUwwSjlEqALbsNTORvF2QM3YeI6vUCmOif/'
     shell: /bin/bash
-network:
-  version: 2
-  ethernets:
-      ens192:
-          dhcp4: true
+
 package_update: true
-yum_repos:
-  docker-ce-stable:
-    name: Docker CE Stable - $basearch
-    baseurl: https://download.docker.com/linux/centos/$releasever/$basearch/stable
-    enabled: true
-    gpgcheck: true
-    gpgkey: https://download.docker.com/linux/centos/gpg
-mounts:
-  - [ /dev/sdb1, /data, "xfs", "defaults", "0", "2" ]
+
+apt:
+  sources:
+    docker.list:
+      source: deb [arch=amd64] https://download.docker.com/linux/ubuntu focal stable
+      keyid: 9DC858229FC7DD38854AE2D88D81803C0EBFCD88
+
 packages:
+  - apt-transport-https
+  - ca-certificates
+  - curl
+  - gnupg
+  - lsb-release
+  - wget
   - docker-ce
   - docker-ce-cli
   - containerd.io
   - net-tools
-  - wget
+  - zip
+  - jq
+
+disk_setup:
+  /dev/sdb:
+    table_type: gpt
+    layout: True
+    overwrite: True
+
+fs_setup:
+  - device: /dev/sdb
+    filesystem: ext4
+    partition: 1
+
+mounts:
+  - [ /dev/sdb1, /data, "auto", "defaults,noexec,nofail" ]
+
 write_files:
-  - path: /harbor/tls.pem
+  - path: /etc/ca.cert
     content: |
       -----BEGIN CERTIFICATE-----
-      MIIFNTCCBB2gAwIBAgISBOwj5VrGioysULxzVBUiVUFLMA0GCSqGSIb3DQEBCwUA
-      BV2aIqlBtxAs9shAAvihMs+pPv03SzLXKO+wa0fzA0MZDjvBype81oNNcjsTLH+I
-      ...
-      gxRRH6GyMLkYviQE3LbzDhgooQ1BY1Ru/dCuzICZ7ekDAy2OUMR33wKQXLI7k+wz
-      5xgzwn/AD8GYhTuWfwPZFR8gzoHI0gWYGt+5Ck8KoOvc4oioM2RR/tM=
+      MIIFwzCCA6ugAwIBAgIUNIxK/woQezIpQPkEGjdiJ276R14wDQYJKoZIhvcNAQEN
+      BQAwcTELMAkGA1UEBhMCVVMxCzAJBgNVBAgMAlZBMRAwDgYDVQQHDAdBc2hidXJu
+      MQswCQYDVQQKDAJTRTERMA8GA1UECwwIUGVyc29uYWwxIzAhBgNVBAMMGnVidW50
+      dS1udi0wMS5lbnYxLmxhYi50ZXN0MB4XDTI0MDUxNjE2MzcwN1oXDTM0MDUxNDE2
+      MzcwN1owcTELMAkGA1UEBhMCVVMxCzAJBgNVBAgMAlZBMRAwDgYDVQQHDAdBc2hi
+      dXJuMQswCQYDVQQKDAJTRTERMA8GA1UECwwIUGVyc29uYWwxIzAhBgNVBAMMGnVi
+...
+      +eSVcO94mrIyOnD+Slz+IxOYrKjb1b7FfX3wS15hAdv9oY46sdnGkxzV2MpC8q5E
+      Y7Tso3bC+jxh97oXFGvMI1Qvklt/fvaznL4ffhPd9Atghis8cNQ5YuBhEWH7zp2p
+      +GGq7RxPDRUgoJztTqbKxP24OYGNIoIdcfuUoueBbBLbOcMg4Kbl+5+wE8sIX7l0
+      71CJQHWFHSYIIH/+wCeSTlC+/BXJ4i9xrTWyaVMDVAfnE7wdjrrtkGCvzqXV9oG2
+      Lj240pfeddFnmOD4X9YXJld7TkKiN5frlF2tA/+o8HLoDUoh7JK7
       -----END CERTIFICATE-----
     owner: 'root:root'
     permissions: '0444'
-  - path: /harbor/tls.key
+  - path: /etc/ca.key
     content: |
       -----BEGIN PRIVATE KEY-----
-      MIIEwAIBADANBgkqhkiG9w0BAQEFAASCBKowggSmAgEAAoIBAQDgzn3P265EV9P5
-      ...
-      i/CMHuI6mqss/RX9r8Ehmiv/UGpJY0qKSq2y5cUbd6NJ+uVmGylZgZSMYaJy81uS
-      oOMuhPX5NU58bC7pulF+VTBxfw0=
+      MIIJQwIBADANBgkqhkiG9w0BAQEFAASCCS0wggkpAgEAAoICAQCSESHYadVs2NJo
+      UOYKZQj923PIi0sKwCyOR0KYlyT5S1FJplg3kpFXZiDxQKedDnx5ar99LnOxipzM
+      gMb4mzD0LH7oAfqhsIXwoSnCFTu8vPvx5nDrj3Oak4wTfOxA2mOoUxK/d9TF1Yv4
+...
+      oPV7AoIBAFCOJ0fLahiHJ7Vg0SVrV8R4p9z04vZo0N+cSB7exZCUVdlvS+9zvT8k
+      VDrFxv/qXf0zpCamE/YbRecAUmymi3Qa8ocUPQk2ppgbUpazVqLxun5j1ASpA8fS
+      u9HexvYV2gS+7irzUdfFraqYlwhywBiueqvfyY/X/Wcyfq+VXDmkJA3vhomK+G9K
+      zqK3WqbCzFgbxN3JeDhRWWImwshFfTegVPwzxFYRKY2bBWD+DpzWnhG43ZyuEzwD
+      ya3r3J6bsLQLrvAmDxDgBMpo+QmoKcAHbBC67CeOlWA2DkhHP7c9J2tFNkrBD9Lg
+      R1tKIKHY5zg5ssR1Irkf7E9ZOEBfoWA=
       -----END PRIVATE KEY-----
     owner: 'root:root'
     permissions: '0444'
@@ -60,47 +99,56 @@ write_files:
     content: |
       #!/bin/bash
       cd /harbor
-      /harbor/install.sh --with-trivy --with-notary
+      /harbor/install.sh --with-trivy
       if [ $? -ne 0 ]
       then
         echo "Failed. Trying again"
-        /harbor/install.sh --with-trivy --with-notary
+        /harbor/install.sh --with-trivy
       fi
     owner: 'root:root'
     permissions: '0755'
   - path: /harbor/harbor.yml
     content: |
-      hostname: harbor-centos.navlab.io
-      #http:
-      #  port: 80
+      hostname: harbor.h2o-4-24532.h2o.vmware.com
       https:
         port: 443
-        certificate: /harbor/tls.pem
-        private_key: /harbor/tls.key
-      # external_url: https://reg.mydomain.com:8433
-      harbor_admin_password: VMware1!
+        # The path of cert and key files for nginx
+        certificate: /harbor/certs/harbor.cert
+        private_key: /harbor/certs/harbor.key
+      external_url: https://harbor.h2o-4-24532.h2o.vmware.com
+      harbor_admin_password: Harbor12345
       database:
         password: root123
-        max_idle_conns: 50
-        max_open_conns: 1000
+        max_idle_conns: 100
+        max_open_conns: 900
+        conn_max_lifetime: 5m
+        conn_max_idle_time: 0
       data_volume: /data
       trivy:
         ignore_unfixed: false
         skip_update: false
+        skip_java_db_update: false
+        offline_scan: false
+        security_check: vuln
         insecure: false
       jobservice:
         max_job_workers: 10
+        job_loggers:
+          - STD_OUTPUT
+          - FILE
+        logger_sweeper_duration: 1 #days
       notification:
-        webhook_job_max_retry: 10
-      chart:
-        absolute_url: disabled
+        webhook_job_max_retry: 3
+        webhook_job_http_client_timeout: 3 #seconds
+      # Log configurations
       log:
         level: info
         local:
           rotate_count: 50
           rotate_size: 200M
           location: /var/log/harbor
-      _version: 2.2.0
+      #This attribute is for migrator to detect the version of the .cfg file, DO NOT MODIFY!
+      _version: 2.9.0
       proxy:
         http_proxy:
         https_proxy:
@@ -109,20 +157,38 @@ write_files:
           - core
           - jobservice
           - trivy
+      upload_purging:
+        enabled: true
+        age: 168h
+        interval: 24h
+        dryrun: false
+      cache:
+        enabled: false
+        expire_hours: 24
+    owner: root:root
+    permissions: '0644'
+  - path: /harbor/certs/v3.ext
+    content: |
+      authorityKeyIdentifier=keyid,issuer
+      basicConstraints=CA:FALSE
+      keyUsage = digitalSignature, nonRepudiation, keyEncipherment, dataEncipherment
+      extendedKeyUsage = serverAuth
+      subjectAltName = @alt_names
+      [alt_names]
+      DNS.1=harbor.h2o-4-24532.h2o.vmware.com
     owner: root:root
     permissions: '0644'
 runcmd:
-  - parted /dev/sdb mklabel gpt
-  - parted /dev/sdb mkpart primary xfs 1MB 10240MB
-  - /sbin/mkfs.xfs /dev/sdb1
-  - mkdir -p /data
-  - mount -t xfs --rw /dev/sdb1 /data
-  - curl -L "https://github.com/docker/compose/releases/download/1.29.1/docker-compose-$(uname -s)-$(uname -m)" -o /usr/local/bin/docker-compose
+  - curl -SL https://github.com/docker/compose/releases/download/v2.27.0/docker-compose-linux-x86_64 -o /usr/local/bin/docker-compose
   - chmod +x /usr/local/bin/docker-compose
   - ln -s /usr/local/bin/docker-compose /usr/bin/docker-compose
   - systemctl enable docker
   - systemctl start docker
-  - wget -q https://github.com/goharbor/harbor/releases/download/v2.2.1/harbor-offline-installer-v2.2.1.tgz
-  - tar --skip-old-files -xzvf harbor-offline-installer-v2.2.1.tgz
-  - rm -f harbor-offline-installer-v2.2.1.tgz
+  - mkdir -p /harbor/certs
+  - openssl genrsa -out /harbor/certs/harbor.key 4096
+  - openssl req -sha512 -new -subj "/C=US/ST=VA/L=Ashburn/O=SE/OU=Personal/CN=harbor.h2o-4-24532.h2o.vmware.com" -key /harbor/certs/harbor.key -out /harbor/certs/harbor.csr
+  - openssl x509 -req -sha512 -days 365 -extfile /harbor/certs/v3.ext -CA /etc/ca.cert -CAkey /etc/ca.key -CAcreateserial -in /harbor/certs/harbor.csr -out /harbor/certs/harbor.cert
+  - wget -q https://github.com/goharbor/harbor/releases/download/v2.9.4/harbor-offline-installer-v2.9.4.tgz
+  - tar --skip-old-files -xzvf harbor-offline-installer-v2.9.4.tgz
+  - rm -f harbor-offline-installer-v2.9.4.tgz
   - /harbor/install-harbor.sh
